@@ -4,8 +4,8 @@ from pydantic import AnyHttpUrl, BaseSettings
 
 
 class Config(BaseSettings):
-    # Discord Webhook URL
-    discord_webhook: AnyHttpUrl
+    # Telegram Bot Token
+    telegram_bot_token: str
 
     # Google Maps API key
     google_maps_api_key: Optional[str]
@@ -22,3 +22,9 @@ class Config(BaseSettings):
 
     # Time delta between individual scrapes in seconds
     scraping_interval: int = 120
+
+    # MongoDB connection
+    mongo_username: str
+    mongo_password: str
+    mongo_host: str = "localhost"
+    mongo_port:  int = 27017

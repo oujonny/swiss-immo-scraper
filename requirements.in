@@ -4,3 +4,7 @@ discord.py
 pydantic
 python-dotenv
 sentry-sdk
+httpcore[asyncio]
+
+pymongo
+python-telegram-bot

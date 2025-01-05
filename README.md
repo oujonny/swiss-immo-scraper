@@ -51,6 +51,7 @@ You can edit the URLs that will be scraped periodically. Simply select your desi
 > Built for Python 3.10 as [aiohttp is not functional with 3.11+](https://github.com/aio-libs/aiohttp/issues/6600)
 
 **Environment variables**:
+
 | ENV_VAR | Description | Required |
 |---|---|---|
 | DISCORD_WEBHOOK | New apartments will be sent to this Discord channel. | Yes |

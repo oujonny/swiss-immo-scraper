@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from aiohttp import ClientSession
 from discord import Webhook, AsyncWebhookAdapter
+from pymongo import MongoClient
 
 from app import setup_custom_logger
 from app.immo.model import ImmoData
@@ -14,6 +15,8 @@ from app.immo.website import ImmoWebsite
 from app.scraper import Scraper, ScraperNetworkError
 from app.utils.discord import send_discord_listing_embed
 from app.utils.google_maps import compute_distance
+from models import listings_collection
+from app.telegram_bot.bot import TelegramBot
 
 
 class ImmoManager:
@@ -23,8 +26,11 @@ class ImmoManager:
         self,
         immo_website_url: str,
         session: ClientSession,
-        discord_webhook_url: str,
         n_seconds_sleep: int,
+        mongo_username: str,
+        mongo_password: str,
+        mongo_host: str,
+        mongo_port: int,
         google_maps_destination: Optional[str],
         google_maps_api_key: Optional[str] = None,
     ):
@@ -32,8 +38,8 @@ class ImmoManager:
         Args:
             immo_website_url: the URL this manager will scrape
             session: shared aiohttp.ClientSession
-            discord_webhook_url: URL string of a discord webhook
-            google_maps_destination: human readable destination string (e.g. "Raemistrasse, Zurich")
+            google_maps_destination: human readable destin
+            ation string (e.g. "Raemistrasse, Zurich")
             google_maps_api_key: Google Maps API Key
         """
         self.immo_website_url = immo_website_url
@@ -48,20 +54,19 @@ class ImmoManager:
         self.immo_website = ImmoWebsite(hostname)
         self.listings = None
 
+        # MongoDB
+        mongu_uri = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+        client = MongoClient(mongu_uri)
+        self.listings_collection = client['immo_db']['listings']
+
         # Instances
         self.logger = setup_custom_logger(".".join([__name__, hostname]))
         self.scraper = Scraper(url=immo_website_url, session=session)
-        self.discord = Webhook.from_url(
-            discord_webhook_url, adapter=AsyncWebhookAdapter(session)
-        )
 
         self.logger.info(f"Initialized for scraping: {immo_website_url}")
 
-    async def _send_discord_message(self, listing):
-        """Send discord message via a webhook for the given listing data"""
+    async def _send_telegram_message(self, listing):
         if self.google_maps_api_key:
-            # Compute the distance from apartment address to the destination address
-            # in this case, default destination address = 'Rämistrasse, Zürich, Switzerland'
             distance_results = await compute_distance(
                 self.scraper.session,
                 self.google_maps_api_key,
@@ -71,56 +76,35 @@ class ImmoManager:
         else:
             distance_results = None
 
-        await send_discord_listing_embed(
-            self.discord,
-            session=self.session,
-            immo_data=listing,
-            hostname=self.immo_website.value,
-            host_url=self.immo_website_url,
-            host_icon_url=self.immo_website.author_icon_url,
-            immo_distances=distance_results,
-        )
+        # await send_discord_listing_embed(
+        #     self.discord,
+        #     session=self.session,
+        #     immo_data=listing,
+        #     hostname=self.immo_website.value,
+        #     host_url=self.immo_website_url,
+        #     host_icon_url=self.immo_website.author_icon_url,
+        #     immo_distances=distance_results,
+        # )
         self.logger.debug("sent %s", listing.url)
-
-    def _find_first_mutual_listing_idx(self, fresh_listings: ImmoData) -> Optional[int]:
-        """Find the first index that is in both (old + fresh) listings"""
-        for old_listing in self.listings:
-            for i, fresh_listing in enumerate(fresh_listings):
-                if old_listing.url == fresh_listing.url:
-                    return i
 
     async def _process_fresh_listings(self, fresh_listings: List[ImmoData]):
         """Search through latest fresh_listings, tagging any new (previously unseen) listings
         and then posting them to Discord.
         """
-        if self.listings:
-            # If there are existing old listings
-            # First, we need to find a listing that is present in both lists (fresh + old)
-            first_mutual_listing_idx = self._find_first_mutual_listing_idx(
-                fresh_listings
-            )
-
-            # If there are no mutual elements, all listings are new
-            if first_mutual_listing_idx is None:
-                first_mutual_listing_idx = len(fresh_listings)
-                if self.listings:
-                    self.logger.warning("All fresh listings are *NEW*")
-                    # We need to warn the user that there might have been more listings added than
-                    # we see in our LIMIT 20 request
-                    await self.discord.send(
-                        f"Next {first_mutual_listing_idx} listings from {self.immo_website.value} "
-                        "are all new, please check manually if there might be more."
-                    )
-            # Send every new listing to discord starting from oldest to newest
-            new_listings = fresh_listings[:first_mutual_listing_idx]
-            for new_listing in reversed(new_listings):
-                await self._send_discord_message(new_listing)
-        elif self.listings is None:
-            # first scrape pass, there are no older listings yet
-            self.logger.debug("skipping first batch of listings")
-
-        # Save latest fresh listings for the next iteration
-        self.listings = fresh_listings
+        for fresh_listing in fresh_listings:
+            if not self.listings_collection.find_one({'url': fresh_listing.url}):
+                # Send new listing to Discord
+                await self._send_telegram_message(fresh_listing)
+                # Insert new listing into the database
+                self.listings_collection.insert_one({
+                    'url': fresh_listing.url,
+                    'title': fresh_listing.title,
+                    'address': fresh_listing.address,
+                    'price': fresh_listing.price,
+                    'rooms': fresh_listing.rooms,
+                    'living_space': fresh_listing.living_space,
+                    'images': fresh_listing.images,
+                })
 
     async def start(self):
         """Scrape, send and save information about latest listings"""
