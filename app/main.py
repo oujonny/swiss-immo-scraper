@@ -30,6 +30,7 @@ async def main(config: Config, manager_class: Type[ImmoManager] = ImmoManager):
         manager = manager_class(
             immo_website_url=url,
             session=session,
+            telegram_bot=telegram_bot,
             n_seconds_sleep=config.scraping_interval,
             mongo_username=config.mongo_username,
             mongo_password=config.mongo_password,

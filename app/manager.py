@@ -5,9 +5,9 @@ from typing import List, Optional
 from urllib.parse import urlparse
 
 from aiohttp import ClientSession
-from discord import Webhook, AsyncWebhookAdapter
 from pymongo import MongoClient
 
+import telegram_bot.bot
 from app import setup_custom_logger
 from app.immo.model import ImmoData
 from app.immo.parser import ImmoParser, ImmoParserError
@@ -27,6 +27,7 @@ class ImmoManager:
         immo_website_url: str,
         session: ClientSession,
         n_seconds_sleep: int,
+        telegram_bot: TelegramBot,
         mongo_username: str,
         mongo_password: str,
         mongo_host: str,
@@ -42,6 +43,7 @@ class ImmoManager:
             ation string (e.g. "Raemistrasse, Zurich")
             google_maps_api_key: Google Maps API Key
         """
+        self.telegram_bot = telegram_bot
         self.immo_website_url = immo_website_url
         self.session = session
         self.google_maps_api_key = google_maps_api_key
@@ -76,15 +78,14 @@ class ImmoManager:
         else:
             distance_results = None
 
-        # await send_discord_listing_embed(
-        #     self.discord,
-        #     session=self.session,
-        #     immo_data=listing,
-        #     hostname=self.immo_website.value,
-        #     host_url=self.immo_website_url,
-        #     host_icon_url=self.immo_website.author_icon_url,
-        #     immo_distances=distance_results,
-        # )
+
+        await telegram_bot.bot.TelegramBot.send_listing(
+            self.telegram_bot,
+            immo_data=listing,
+            hostname=self.immo_website.value,
+            host_url=self.immo_website_url,
+            immo_distances=distance_results,
+        )
         self.logger.debug("sent %s", listing.url)
 
     async def _process_fresh_listings(self, fresh_listings: List[ImmoData]):
@@ -93,8 +94,8 @@ class ImmoManager:
         """
         for fresh_listing in fresh_listings:
             if not self.listings_collection.find_one({'url': fresh_listing.url}):
-                # Send new listing to Discord
-                await self._send_telegram_message(fresh_listing)
+                self.logger.info(f"New listing found: {fresh_listing.url}")
+
                 # Insert new listing into the database
                 self.listings_collection.insert_one({
                     'url': fresh_listing.url,
@@ -105,6 +106,11 @@ class ImmoManager:
                     'living_space': fresh_listing.living_space,
                     'images': fresh_listing.images,
                 })
+
+                # Send the new listing to Telegram
+                if self.telegram_bot.chat_id is not None:
+                    self.logger.debug("Sending new listing to Telegram")
+                    await self._send_telegram_message(fresh_listing)
 
     async def start(self):
         """Scrape, send and save information about latest listings"""
@@ -127,6 +133,7 @@ class ImmoManager:
                 await asyncio.sleep(self.n_seconds_sleep)
                 continue
 
+            self.logger.debug("Scraped %s fresh listings", len(fresh_listings))
             await self._process_fresh_listings(fresh_listings)
 
             # wait
