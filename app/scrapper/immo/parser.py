@@ -6,10 +6,10 @@ from typing import List
 from bs4 import BeautifulSoup
 
 from app import setup_custom_logger
-from app.immo.error import ImmoParserError
-from app.immo.model import ImmoData, ImmoPriceKind
-from app.immo.website import ImmoWebsite
-from app.utils.image import scaled_image_size
+from app.scrapper.immo.error import ImmoParserError
+from app.scrapper.immo.model import ImmoData, ImmoPriceKind
+from app.scrapper.immo.website import ImmoWebsite
+from app.scrapper.utils.image import scaled_image_size
 
 
 logger = setup_custom_logger(__name__)

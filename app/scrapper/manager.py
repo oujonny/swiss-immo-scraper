@@ -6,17 +6,16 @@ from urllib.parse import urlparse
 
 from aiohttp import ClientSession
 from pymongo import MongoClient
+from telegram import Update
+from telegram.ext import Application, CallbackContext
 
-import telegram_bot.bot
 from app import setup_custom_logger
-from app.immo.model import ImmoData
-from app.immo.parser import ImmoParser, ImmoParserError
-from app.immo.website import ImmoWebsite
-from app.scraper import Scraper, ScraperNetworkError
-from app.utils.discord import send_discord_listing_embed
-from app.utils.google_maps import compute_distance
-from models import listings_collection
-from app.telegram_bot.bot import TelegramBot
+from app.bot import main as telegram_bot
+from app.scrapper.immo.error import ImmoParserError
+from app.scrapper.immo.model import ImmoData
+from app.scrapper.immo.parser import ImmoParser
+from app.scrapper.immo.website import ImmoWebsite
+from app.scrapper.scraper import Scraper, ScraperNetworkError
 
 
 class ImmoManager:
@@ -27,28 +26,25 @@ class ImmoManager:
         immo_website_url: str,
         session: ClientSession,
         n_seconds_sleep: int,
-        telegram_bot: TelegramBot,
+        telegram_app: Application,
+        chat_id: int,
         mongo_username: str,
         mongo_password: str,
         mongo_host: str,
         mongo_port: int,
-        google_maps_destination: Optional[str],
-        google_maps_api_key: Optional[str] = None,
     ):
         """
         Args:
             immo_website_url: the URL this manager will scrape
             session: shared aiohttp.ClientSession
-            google_maps_destination: human readable destin
-            ation string (e.g. "Raemistrasse, Zurich")
-            google_maps_api_key: Google Maps API Key
         """
-        self.telegram_bot = telegram_bot
         self.immo_website_url = immo_website_url
         self.session = session
-        self.google_maps_api_key = google_maps_api_key
-        self.google_maps_destination_address = google_maps_destination
         self.n_seconds_sleep = n_seconds_sleep
+
+        # Telegram
+        self.telegram_app = telegram_app
+        self.chat_id = chat_id
 
         # Model
         parsed_url = urlparse(immo_website_url)
@@ -68,23 +64,18 @@ class ImmoManager:
         self.logger.info(f"Initialized for scraping: {immo_website_url}")
 
     async def _send_telegram_message(self, listing):
-        if self.google_maps_api_key:
-            distance_results = await compute_distance(
-                self.scraper.session,
-                self.google_maps_api_key,
-                origin_address=listing.address,
-                destination_address=self.google_maps_destination_address,
-            )
-        else:
-            distance_results = None
+        distance_results = None
+
+        update = Update(0)
+        context = CallbackContext(self.telegram_app, chat_id=self.chat_id)
 
 
-        await telegram_bot.bot.TelegramBot.send_listing(
-            self.telegram_bot,
+        await telegram_bot.send_listing(
+            update=update,
+            context=context,
             immo_data=listing,
             hostname=self.immo_website.value,
             host_url=self.immo_website_url,
-            immo_distances=distance_results,
         )
         self.logger.debug("sent %s", listing.url)
 
@@ -108,12 +99,13 @@ class ImmoManager:
                 })
 
                 # Send the new listing to Telegram
-                if self.telegram_bot.chat_id is not None:
+                if 1 ==1:
                     self.logger.debug("Sending new listing to Telegram")
                     await self._send_telegram_message(fresh_listing)
 
     async def start(self):
         """Scrape, send and save information about latest listings"""
+
         while True:
             try:
                 # Scrape
