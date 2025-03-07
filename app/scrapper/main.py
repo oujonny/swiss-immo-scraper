@@ -21,7 +21,7 @@ def generate_scrape_urls(entry) -> list:
     """Generate a list of URLs to scrape from the settings collection in the db"""
     scrape_urls = []
     scrape_urls.append(immoscount24_url_generator(entry["zip"], entry["min_rooms"]))
-    scrape_urls.append(homegate24_url_generator(entry["zip"], entry["min_rooms"]))
+    # TODO: disabled to avoid conflicts, update needed to the parsing; scrape_urls.append(homegate24_url_generator(entry["zip"], entry["min_rooms"]))
 
     return scrape_urls
 

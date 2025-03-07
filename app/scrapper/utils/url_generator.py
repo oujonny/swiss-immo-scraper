@@ -14,6 +14,7 @@ def immoscount24_url_generator(zip: list, min_rooms: float) -> str:
         for z in zip[2:]:
             url += f"%2Cgeo-zipcode-{z}"
 
+    url += "o=dateCreated-desc"
     return url
 
 def homegate24_url_generator(zip: list, min_rooms: float) -> str:
@@ -31,4 +32,5 @@ def homegate24_url_generator(zip: list, min_rooms: float) -> str:
         for z in zip[2:]:
             url += f"%2Cgeo-zipcode-{z}"
 
+    url += "&o=dateCreated-desc"
     return url
