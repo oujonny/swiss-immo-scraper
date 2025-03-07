@@ -3,6 +3,7 @@ from datetime import datetime
 from time import sleep
 from typing import List, Dict, Tuple
 import aiohttp
+import cloudscraper
 import telegram
 from pymongo import MongoClient
 from telegram import Update
@@ -81,25 +82,36 @@ async def prepare_message(images: List[str], caption: string, session: aiohttp.C
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
-        "Referer": "https://www.immoscout24.ch/"
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": "https://www.immoscout24.ch/",
+        "DNT": "1",
+        "Sec-Fetch-Dest": "image",
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Site": "same-site"
     }
 
     if len(images) > 10:
         caption += f"\n\n <b>More images available on the listing</b>"
 
     for image_url in images[:10]:
-        async with session.get(image_url, headers=headers) as response:
-            if response.status == 200:
-                logger.info(f"Downloading image: {image_url}")
-                image = await response.read()
-                # for first image add caption
-                if not media_images:
-                    media_images.append(telegram.InputMediaPhoto(media=image, caption=caption, parse_mode="HTML"))
-                else:
-                    media_images.append(telegram.InputMediaPhoto(media=image))
+        scraper = cloudscraper.create_scraper()  # returns a CloudScraper instance
+        response = scraper.get(image_url)
+        if response.status_code == 200:
+            logger.info(f"Downloading image: {image_url}")
+            image = response.content
+            # for first image add caption
+            if not media_images:
+                media_images.append(telegram.InputMediaPhoto(media=image, caption=caption, parse_mode="HTML"))
             else:
-                logger.error(f"Failed to download image: {image_url} with status code: {response.status}")
-            sleep(2) # Sleep for 2 seconds to avoid rate limiting
+                media_images.append(telegram.InputMediaPhoto(media=image))
+        else:
+            logger.error(f"Failed to download image: {image_url} with status code: {response.status}")
+            logger.error({response})
+        sleep(2) # Sleep for 2 seconds to avoid rate limiting
     return media_images
 
 def short_description(description: str) -> str:

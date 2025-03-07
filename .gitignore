@@ -13,3 +13,4 @@ venv/
 .tox/
 htmlcov/
 .coverage
+/data/
