@@ -5,12 +5,12 @@ from typing import Type
 
 import sentry_sdk
 from pymongo import MongoClient
+from telegram import Update
+from telegram.ext import ContextTypes
 
 from app import setup_custom_logger
 from app.scrapper.manager import ImmoManager
 from app.config import Config
-
-from app.bot.main import telegram_app
 
 from app.scrapper import utils, init_client_session
 from app.scrapper.utils.url_generator import immoscount24_url_generator, homegate24_url_generator
@@ -25,7 +25,7 @@ def generate_scrape_urls(entry) -> list:
 
     return scrape_urls
 
-async def main(config: Config, manager_class: Type[ImmoManager] = ImmoManager):
+async def main(config: Config, context: ContextTypes.DEFAULT_TYPE, chat_id: int, manager_class: Type[ImmoManager] = ImmoManager):
     mongo_uri = f"mongodb://{config.mongo_username}:{config.mongo_password}@{config.mongo_host}:{config.mongo_port}/"
 
     mongo_client = MongoClient(mongo_uri)
@@ -36,34 +36,25 @@ async def main(config: Config, manager_class: Type[ImmoManager] = ImmoManager):
         scrape_urls = generate_scrape_urls(entry)
 
         """Create an ImmoManager for each immo website and start scraping"""
-        session = init_client_session()
-
-        managers, tasks = [], []
 
         if not scrape_urls:
             log.info("No URLs for scraping provided. Exiting...")
             return
 
         for url in scrape_urls:
+            session = init_client_session()
             manager = manager_class(
                 immo_website_url=url,
                 session=session,
                 n_seconds_sleep=config.scraping_interval,
-                telegram_app = telegram_app,
-                chat_id = entry["chat_id"],
                 mongo_username=config.mongo_username,
                 mongo_password=config.mongo_password,
                 mongo_host=config.mongo_host,
                 mongo_port=config.mongo_port,
+                chat_id=chat_id,
             )
-            managers.append(manager)
-
-            tasks.append(asyncio.create_task(manager.start()))
-
-        # Wait for all tasks to finish (ideally never)
-        await asyncio.gather(*tasks)
-
-        await session.close()
+            await manager.start()
+            await session.close()
 
 
 if __name__ == "__main__":

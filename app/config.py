@@ -7,10 +7,6 @@ class Config(BaseSettings):
     # Telegram Bot Token
     telegram_bot_token: str
 
-    # List of Immo URLs that will be scraped.
-    # You can use multiple URLs per one Immo website.
-    scrape_urls: List[AnyHttpUrl]
-
     # Time delta between individual scrapes in seconds
     scraping_interval: int = 120
 

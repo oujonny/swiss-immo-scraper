@@ -13,13 +13,17 @@ class ImmoPriceKind(Enum):
 @dataclass
 class ImmoData:
     title: str
+    description: str
+    #availability: Optional[str]
     url: str
     images: List[str]
+    balcony: Optional[bool] = False
     address: str = "No address"
     price: str = "On request"
     price_kind: ImmoPriceKind = ImmoPriceKind.RENT
-    rooms: str = "-"
+    rooms: float = 0
     living_space: str = "-"
+    documents: Optional[list[str]] = None
     currency: str = "CHF"
     lister_logo_url: Optional[str] = None
 
@@ -38,7 +42,7 @@ class ImmoData:
         self.living_space = self._add_suffix(self.living_space, " m²")
 
         if isinstance(self.rooms, int):
-            self.rooms = str(self.rooms)
+            self.rooms = float(self.rooms)
 
     def _add_suffix(self, x, suffix) -> str:
         """Add unit as a suffix to a given variable"""

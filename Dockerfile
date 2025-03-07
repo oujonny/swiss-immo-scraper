@@ -2,11 +2,11 @@
 
 FROM python:3.10
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
-COPY requirements.txt requirements.txt
-RUN pip3 install -r requirements.txt
+COPY . .
 
-ADD app app
+RUN . venv/bin/activate
+RUN pip install --no-cache-dir -r requirements.txt
 
-CMD [ "python3", "-m", "app.main" ]
+CMD [ "python", "-m", "app.main" ]

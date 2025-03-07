@@ -3,7 +3,9 @@ import json
 import re
 from typing import List
 
+import telegram.constants
 from bs4 import BeautifulSoup
+from chardet.cli.chardetect import description_of
 
 from app import setup_custom_logger
 from app.scrapper.immo.error import ImmoParserError
@@ -14,6 +16,20 @@ from app.scrapper.utils.image import scaled_image_size
 
 logger = setup_custom_logger(__name__)
 
+
+def html_to_plain_text(html_content):
+    # Parse the HTML content
+    soup = BeautifulSoup(html_content, 'lxml')
+
+    # Get the plain text by stripping all HTML tags
+    plain_text = soup.get_text()
+
+    # Optionally, you can also clean up the text further by removing extra whitespace or newlines
+    lines = (line.strip() for line in plain_text.splitlines())
+    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+    plain_text = '\n'.join(chunk for chunk in chunks if chunk)
+
+    return plain_text
 
 class ImmoParser:
     """Parse different HTML Immo website listings"""
@@ -51,6 +67,7 @@ class ImmoParser:
             primary_localization = listing["localization"]["primary"]
             try:
                 title = listing["localization"][primary_localization]["text"]["title"]
+                description = html_to_plain_text(listing["localization"][primary_localization]["text"]["description"])
                 loc = listing["address"]["locality"]
                 plz = listing["address"]["postalCode"]
                 street = listing["address"]["street"]
@@ -62,6 +79,8 @@ class ImmoParser:
             rent = listing.get("prices").get("rent").get("gross") # gross
             rooms = listing.get("characteristics").get("numberOfRooms")
             living_space = listing.get("characteristics").get("livingSpace")
+            # TODO: availability is not part of the JSON...
+            balcony = listing.get("characteristics").get("hasBalcony")
 
             attachments = listing["localization"][primary_localization].get("attachments") or []
             images = [
@@ -69,89 +88,26 @@ class ImmoParser:
                 for attachment in attachments
                 if attachment["type"] == "IMAGE"
             ]
+            documents = [
+                attachment["url"].encode().decode("unicode-escape")
+                for attachment in attachments
+                if attachment["type"] == "DOCUMENT"
+            ]
+
 
             immo_data_list.append(
                 ImmoData(
                     title=title,
+                    description=description,
                     address=address,
                     url=url,
                     price=rent,
                     rooms=rooms,
                     living_space=living_space,
+                    balcony=balcony,
                     images=images,
+                    documents=documents,
                     lister_logo_url=lister_logo_url
-                )
-            )
-
-        return immo_data_list
-
-    @staticmethod
-    def _parse_immoscout24_old(html: BeautifulSoup) -> List[ImmoData]:
-        """DEPRECATED, worked for older version of immoscout24.ch
-
-        Parse immoscout24.ch listings
-
-        Returns:
-            list[ImmoData]: ImmoData of listings on the immo website
-        """
-        json_data_raw = html.find("script", {"id": "state"}).text.lstrip(
-            "__INITIAL_STATE__="
-        )
-        # This data contains obfuscated js code, need to clean it up first
-        json_data_clean = re.sub(
-            pattern='("insertion":{.*)("maxPriceCalculator")',
-            repl="\\2",
-            string=json_data_raw,
-        )
-        json_data_clean = re.sub(
-            pattern=":undefined", repl=":null", string=json_data_clean
-        )
-        listings_json = json.loads(json_data_clean)
-        try:
-            listings = listings_json["pages"]["searchResult"]["resultData"]["listData"]
-        except KeyError:
-            raise ImmoParserError("Listings json path changed.")
-
-        immo_data_list = []
-        for listing in listings:
-            title = listing.get("title", "Wohnung")
-            try:
-                loc = listing["cityName"]
-                plz = listing["zip"]
-                street = listing["street"]
-                state = listing["stateShort"]
-                address = f"{street}, {plz} {loc}, {state}"
-            except KeyError:
-                address = None
-            url = listing.get("propertyUrl")
-            rent = listing.get("price")
-            rooms = listing.get("numberOfRooms")
-            living_space = listing.get("surfaceLiving")
-
-            images = []
-            for img in listing.get("images", []):
-                # Need to set a valid size for the image to load (less than 1280x720)
-                width, height = scaled_image_size(
-                    img.get("originalWidth", 0), img.get("originalHeight", 0), 1280, 720
-                )
-                if img.get("url"):
-                    images.append(
-                        img["url"]
-                        .replace("{width}", str(width), 1)
-                        .replace("{height}", str(height), 1)
-                        .replace("{resizemode}", "3", 1)
-                        .replace("{quality}", "90", 1)
-                    )
-
-            immo_data_list.append(
-                ImmoData(
-                    title=title,
-                    address=address,
-                    url=url,
-                    price=rent,
-                    rooms=rooms,
-                    living_space=living_space,
-                    images=images,
                 )
             )
 
@@ -192,12 +148,20 @@ class ImmoParser:
                 localization = listing["localization"]
                 primary_key = localization["primary"]
                 title = localization[primary_key]["text"]["title"]
+                description = html_to_plain_text(listing["localization"][primary_key]["text"]["description"])
+
                 attachments = localization[primary_key].get("attachments") or []
                 images = [
                     attachment["url"].encode().decode("unicode-escape")
                     for attachment in attachments
                     if attachment["type"] == "IMAGE"
                 ]
+                documents = [
+                    attachment["url"].encode().decode("unicode-escape")
+                    for attachment in attachments
+                    if attachment["type"] == "DOCUMENT"
+                ]
+
                 address = None
                 try:
                     loc = listing["address"]["locality"]
@@ -212,16 +176,20 @@ class ImmoParser:
                 if characteristics := listing.get("characteristics"):
                     rooms = str(characteristics.get("numberOfRooms"))
                     living_space = characteristics.get("livingSpace")
+                    balcony = characteristics.get("hasBalcony")
 
                 immo_data_list.append(
                     ImmoData(
                         title=title,
+                        description=description,
                         address=address,
                         url=url,
                         price=rent,
                         rooms=rooms,
                         living_space=living_space,
+                        balcony=balcony,
                         images=images,
+                        documents=documents,
                     )
                 )
             except KeyError:
