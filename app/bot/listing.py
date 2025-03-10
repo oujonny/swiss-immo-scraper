@@ -36,6 +36,9 @@ async def send_listing(context: ContextTypes.DEFAULT_TYPE, immo_data: ImmoData, 
                 # Handle the case where no images were downloaded
                 await context.bot.send_message(chat_id=chat_id, text=message_content, parse_mode="HTML")
 
+    # sleep to avoid rate limiting
+    sleep(1)
+
 async def callback_scrape_immo_listing(context: ContextTypes.DEFAULT_TYPE, ):
     config = Config()
     await scrape_immo_listing(context, config, chat_id=context.job.chat_id)
@@ -111,7 +114,6 @@ async def prepare_message(images: List[str], caption: string, session: aiohttp.C
         else:
             logger.error(f"Failed to download image: {image_url} with status code: {response.status}")
             logger.error({response})
-        sleep(2) # Sleep for 2 seconds to avoid rate limiting
     return media_images
 
 def short_description(description: str) -> str:

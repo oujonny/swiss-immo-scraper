@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import asyncio
+import logging
 from typing import List, Optional
 from urllib.parse import urlparse
 
 from aiohttp import ClientSession
 from pymongo import MongoClient
-from telegram import Update
-from telegram.ext import Application, CallbackContext, ContextTypes
 
-from app import setup_custom_logger, config
-from app.bot import main as telegram_bot
+from app import setup_custom_logger
 from app.scrapper.immo.error import ImmoParserError
 from app.scrapper.immo.model import ImmoData
 from app.scrapper.immo.parser import ImmoParser
@@ -62,32 +59,74 @@ class ImmoManager:
 
         self.logger.info(f"Initialized for scraping: {immo_website_url}")
 
+    def _find_first_mutual_listing_idx(self, fresh_listings: ImmoData) -> Optional[int]:
+        """Find the first index that is in both (old + fresh) listings"""
+        for old_listing in self.listings:
+            for i, fresh_listing in enumerate(fresh_listings):
+                if old_listing['url'] == fresh_listing.url:
+                    return i
+
     async def _process_fresh_listings(self, fresh_listings: List[ImmoData]):
         """Search through latest fresh_listings, tagging any new (previously unseen) listings
-        and then posting them to Discord.
+        and then posting them to Disc ord.
         """
-        for fresh_listing in fresh_listings:
-            # Check if listing is already in the database (maybe also from another portal, therefore excluding the listing URL)
-            if not self.listings_collection.find_one({'title': fresh_listing.title, 'address': fresh_listing.address, 'price': fresh_listing.price, 'living_space': fresh_listing.living_space}):
-                self.logger.info(f"New listing found: {fresh_listing.url}")
+        # load all listings from the database int self.listings to immoData objects
+        self.listings = list(self.listings_collection.find())[::-1]
 
-                # Insert new listing into the database
+        if self.listings:
+            # If there are existing old listings
+            # First, we need to find a listing that is present in both lists (fresh + old)
+            first_mutual_listing_idx = self._find_first_mutual_listing_idx(
+                fresh_listings
+            )
+
+            # If there are no mutual elements, all listings are new
+            if first_mutual_listing_idx is None:
+                first_mutual_listing_idx = len(fresh_listings)
+                if self.listings:
+                    self.logger.warning("All fresh listings are *NEW*")
+                    # We need to warn the user that there might have been more listings added than
+                    # we see in our LIMIT 20 request
+                    # TODO send telegram message
+            # Send every new listing to discord starting from oldest to newest
+            new_listings = fresh_listings[:first_mutual_listing_idx]
+            for new_listing in new_listings:
+                # Check if listing is already in the database (maybe also from another portal, therefore excluding the listing URL)
+                if not self.listings_collection.find_one({'title': new_listing.title, 'address': new_listing.address, 'price': new_listing.price, 'living_space': new_listing.living_space}):
+                    self.logger.info(f"New listing found: {new_listing.url}")
+
+                    # Insert new listing into the database
+                    self.listings_collection.insert_one({
+                        'title': new_listing.title,
+                        'description': new_listing.description,
+                        'url': new_listing.url,
+                        'images': new_listing.images,
+                        'documents': new_listing.documents,
+                        'address': new_listing.address,
+                        'price': new_listing.price,
+                        'rooms': new_listing.rooms,
+                        'living_space': new_listing.living_space,
+                        'balcony': new_listing.balcony,
+                    })
+        elif len(self.listings) < 1:
+            # initial run, store all listings in the database
+            self.logger.info("Initial run, storing all listings in the database")
+            for listing in fresh_listings:
                 self.listings_collection.insert_one({
-                    'title': fresh_listing.title,
-                    'description': fresh_listing.description,
-                    'url': fresh_listing.url,
-                    'images': fresh_listing.images,
-                    'documents': fresh_listing.documents,
-                    'address': fresh_listing.address,
-                    'price': fresh_listing.price,
-                    'rooms': fresh_listing.rooms,
-                    'living_space': fresh_listing.living_space,
-                    'balcony': fresh_listing.balcony,
+                    'title': listing.title,
+                    'description': listing.description,
+                    'url': listing.url,
+                    'images': listing.images,
+                    'documents': listing.documents,
+                    'address': listing.address,
+                    'price': listing.price,
+                    'rooms': listing.rooms,
+                    'living_space': listing.living_space,
+                    'balcony': listing.balcony,
                 })
 
     async def start(self):
         """Scrape, send and save information about latest listings"""
-        fresh_listings = []
         try:
             # Scrape
             fresh_listings_html = await self.scraper.scrape()
@@ -102,7 +141,7 @@ class ImmoManager:
         except (KeyError, ImmoParserError) as e:
             self.logger.warning(f"Caught parsing error, html likely changed: {e}")
 
-        self.logger.debug("Scraped %s fresh listings", len(fresh_listings))
+        self.logger.debug("Scraped %s listings", len(fresh_listings))
         if len(fresh_listings) > 0:
             await self._process_fresh_listings(fresh_listings)
 
