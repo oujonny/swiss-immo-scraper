@@ -59,13 +59,6 @@ class ImmoManager:
 
         self.logger.info(f"Initialized for scraping: {immo_website_url}")
 
-    def _find_first_mutual_listing_idx(self, fresh_listings: ImmoData) -> Optional[int]:
-        """Find the first index that is in both (old + fresh) listings"""
-        for old_listing in self.listings:
-            for i, fresh_listing in enumerate(fresh_listings):
-                if old_listing['url'] == fresh_listing.url:
-                    return i
-
     async def _process_fresh_listings(self, fresh_listings: List[ImmoData]):
         """Search through latest fresh_listings, tagging any new (previously unseen) listings
         and then posting them to Disc ord.
@@ -74,28 +67,15 @@ class ImmoManager:
         self.listings = list(self.listings_collection.find())[::-1]
 
         if self.listings:
-            # If there are existing old listings
-            # First, we need to find a listing that is present in both lists (fresh + old)
-            first_mutual_listing_idx = self._find_first_mutual_listing_idx(
-                fresh_listings
-            )
-
-            # If there are no mutual elements, all listings are new
-            if first_mutual_listing_idx is None:
-                first_mutual_listing_idx = len(fresh_listings)
-                if self.listings:
-                    self.logger.warning("All fresh listings are *NEW*")
-                    # We need to warn the user that there might have been more listings added than
-                    # we see in our LIMIT 20 request
-                    # TODO send telegram message
-            # Send every new listing to discord starting from oldest to newest
-            new_listings = fresh_listings[:first_mutual_listing_idx]
-            for new_listing in new_listings:
+            for new_listing in fresh_listings:
                 # Check if listing is already in the database (maybe also from another portal, therefore excluding the listing URL)
+                counter = 0
                 if not self.listings_collection.find_one({'title': new_listing.title, 'address': new_listing.address, 'price': new_listing.price, 'living_space': new_listing.living_space}):
                     self.logger.info(f"New listing found: {new_listing.url}")
+                    counter += 1
 
                     # Insert new listing into the database
+                    self.logger.debug(f"Inserting new listing: {new_listing}")
                     self.listings_collection.insert_one({
                         'title': new_listing.title,
                         'description': new_listing.description,
@@ -108,6 +88,7 @@ class ImmoManager:
                         'living_space': new_listing.living_space,
                         'balcony': new_listing.balcony,
                     })
+                self.logger.info(f"Inserted {counter} new listings")
         elif len(self.listings) < 1:
             # initial run, store all listings in the database
             self.logger.info("Initial run, storing all listings in the database")

@@ -22,7 +22,7 @@ async def min_rooms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return CONFIRM
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["min_rooms"] = float(update.message.text)
+    context.user_data["min_rooms"] = str(update.message.text)
     HTMLmessage = f"""
 Please confirm your settings:
 <b>PLZ:</b> {context.user_data["zip"]}

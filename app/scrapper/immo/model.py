@@ -21,7 +21,7 @@ class ImmoData:
     address: str = "No address"
     price: str = "On request"
     price_kind: ImmoPriceKind = ImmoPriceKind.RENT
-    rooms: float = 0
+    rooms: str = "-"
     living_space: str = "-"
     documents: Optional[list[str]] = None
     currency: str = "CHF"
@@ -42,7 +42,7 @@ class ImmoData:
         self.living_space = self._add_suffix(self.living_space, " m²")
 
         if isinstance(self.rooms, int):
-            self.rooms = float(self.rooms)
+            self.rooms = str(self.rooms)
 
     def _add_suffix(self, x, suffix) -> str:
         """Add unit as a suffix to a given variable"""
